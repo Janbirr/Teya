@@ -1,49 +1,29 @@
 "use client"
 
-import type React from "react"
-
-import { useEffect, useRef, useState } from "react"
+import { useActionState, useEffect, useRef, useState } from "react"
+import { saveLetterAction, lockAction, type ActionState } from "@/app/actions/letter"
+import type { LetterContent, Role } from "@/lib/letter-store"
 import { Button } from "@/components/ui/button"
-
-const DEFAULT_TITLE = "To My Dearest"
-
-const DEFAULT_MESSAGE = `From the very first moment I saw you, I knew my life was about to change in the most beautiful way. You walked in like the first warm morning after a long winter, and somehow everything felt softer, brighter, and more alive.
-
-I love the little things about you — the way you laugh at your own jokes before you finish them, the way your eyes light up when you talk about the things you love, and the way you make even the most ordinary days feel like something worth remembering.
-
-You are my calm in every storm, my favorite hello and my hardest goodbye. When I am with you, I am exactly where I am meant to be. You make me want to be braver, kinder, and better in every way.
-
-These blue flowers are for you — quiet, gentle, and endless, just like the way I will always love you. No matter where life takes us, my heart will keep choosing you, again and again.
-
-Thank you for being you. Thank you for being mine.
-
-Forever and always,
-Yours`
 
 const SIGN_OFF = "With all my love"
 
-export function LoveLetter() {
-  const [title, setTitle] = useState(DEFAULT_TITLE)
-  const [message, setMessage] = useState(DEFAULT_MESSAGE)
-  const [signature, setSignature] = useState("")
+export function LoveLetter({ role, content }: { role: Role; content: LetterContent }) {
   const [isEditing, setIsEditing] = useState(false)
-
+  const [draft, setDraft] = useState(content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load any previously saved letter from this browser.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("love-letter")
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed.title) setTitle(parsed.title)
-        if (parsed.message) setMessage(parsed.message)
-        if (typeof parsed.signature === "string") setSignature(parsed.signature)
-      }
-    } catch {
-      // ignore malformed storage
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await saveLetterAction(prev, formData)
+    if (!result?.error) {
+      setDraft({
+        title: String(formData.get("title") ?? "").trim() || "For You, My Love",
+        body: String(formData.get("body") ?? "").trim(),
+        signature: String(formData.get("signature") ?? "").trim(),
+      })
+      setIsEditing(false)
     }
-  }, [])
+    return result
+  }, undefined)
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -51,21 +31,11 @@ export function LoveLetter() {
       el.style.height = "auto"
       el.style.height = `${el.scrollHeight}px`
     }
-  }, [isEditing, message])
-
-  function handleSave() {
-    try {
-      localStorage.setItem("love-letter", JSON.stringify({ title, message, signature }))
-    } catch {
-      // ignore storage errors
-    }
-    setIsEditing(false)
-  }
+  }, [isEditing])
 
   return (
     <article className="relative mx-auto w-full max-w-2xl">
       <div className="relative overflow-hidden rounded-3xl border border-border bg-card/80 shadow-xl shadow-primary/10 backdrop-blur-sm">
-        {/* corner flowers */}
         <img
           src="/images/blue-flowers-corner.png"
           alt=""
@@ -81,12 +51,12 @@ export function LoveLetter() {
 
         <div className="relative px-6 py-10 sm:px-12 sm:py-14">
           {isEditing ? (
-            <div className="flex flex-col gap-5">
+            <form action={formAction} className="flex flex-col gap-5">
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Title</span>
                 <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  name="title"
+                  defaultValue={draft.title}
                   className="rounded-lg border border-input bg-background px-3 py-2 font-serif text-2xl text-foreground outline-none focus:ring-2 focus:ring-ring"
                   placeholder="To my dearest..."
                 />
@@ -98,8 +68,8 @@ export function LoveLetter() {
                 </span>
                 <textarea
                   ref={textareaRef}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  name="body"
+                  defaultValue={draft.body}
                   className="min-h-64 resize-none rounded-lg border border-input bg-background px-4 py-3 font-serif text-lg leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Write your heart out..."
                 />
@@ -110,23 +80,27 @@ export function LoveLetter() {
                   Sign it (your name)
                 </span>
                 <input
-                  value={signature}
-                  onChange={(e) => setSignature(e.target.value)}
+                  name="signature"
+                  defaultValue={draft.signature}
                   className="rounded-lg border border-input bg-background px-3 py-2 font-script text-2xl text-primary outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Your name"
                 />
               </label>
 
+              {state?.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+
               <div className="flex justify-end gap-3">
-                <Button variant="ghost" onClick={() => setIsEditing(false)}>
+                <Button type="button" variant="ghost" onClick={() => setIsEditing(false)} disabled={pending}>
                   Cancel
                 </Button>
-                <Button onClick={handleSave}>Save letter</Button>
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Saving..." : "Save letter"}
+                </Button>
               </div>
-            </div>
+            </form>
           ) : (
             <div className="flex flex-col items-center text-center">
-              <p className="font-script text-3xl text-primary sm:text-4xl">{title}</p>
+              <p className="font-script text-3xl text-primary sm:text-4xl">{draft.title}</p>
 
               <img
                 src="/images/blue-flowers-sprig.png"
@@ -136,19 +110,28 @@ export function LoveLetter() {
               />
 
               <div className="w-full space-y-5 text-pretty text-left font-serif text-lg leading-relaxed text-foreground/90 sm:text-xl">
-                {message.split("\n\n").map((paragraph, i) => (
+                {draft.body.split("\n\n").map((paragraph, i) => (
                   <p key={i}>{paragraph}</p>
                 ))}
               </div>
 
               <div className="mt-8 flex flex-col items-center gap-1">
                 <span className="text-sm italic text-muted-foreground">{SIGN_OFF},</span>
-                {signature ? <span className="font-script text-3xl text-primary">{signature}</span> : null}
+                {draft.signature ? <span className="font-script text-3xl text-primary">{draft.signature}</span> : null}
               </div>
 
-              <Button variant="outline" className="mt-10 bg-transparent" onClick={() => setIsEditing(true)}>
-                Edit this letter
-              </Button>
+              <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+                {role === "editor" ? (
+                  <Button variant="outline" className="bg-transparent" onClick={() => setIsEditing(true)}>
+                    Edit this letter
+                  </Button>
+                ) : null}
+                <form action={lockAction}>
+                  <Button type="submit" variant="ghost">
+                    Lock
+                  </Button>
+                </form>
+              </div>
             </div>
           )}
         </div>
